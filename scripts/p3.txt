@@ -1,0 +1,86 @@
+## Part 3: Spatiotemporal Modeling & Graph Neural Networks (Questions 17?24)
+
+### Question 17 (Written / Graph Theory)
+**Question:** How is the county adjacency graph $G = (V, E)$ constructed from US Census TIGER shapefiles? Explain the mathematical difference between Queen and Rook contiguity.
+**Ideal Answer:**
+Let $V = \{1, \dots, N\}$ be vertices representing county polygons $\mathcal{P}_i$.
+1. **Rook Contiguity:** An edge $e_{ij} = (i, j) \in E$ exists if and only if county boundaries share a common line segment of positive length:
+$$E_{\text{Rook}} = \{ (i, j) : \text{length}(\partial \mathcal{P}_i \cap \partial \mathcal{P}_j) > 0 \}$$
+2. **Queen Contiguity:** An edge exists if boundaries share either a linear border or a point vertex:
+$$E_{\text{Queen}} = \{ (i, j) : \partial \mathcal{P}_i \cap \partial \mathcal{P}_j \neq \emptyset, i \neq j \}$$
+We use Queen contiguity with a maximum centroid distance threshold fallback ($d_{\text{thresh}} = 100$ km) to prevent islanded (degree-0) nodes in coastal or isolated rural counties.
+
+---
+
+### Question 18 (Written / Graph Neural Networks)
+**Question:** Derive the symmetric normalized graph Laplacian matrix $\hat{A} = D^{-1/2} \tilde{A} D^{-1/2}$ used in Graph Convolutional Networks (GCN) and explain why self-loops and degree normalization are essential.
+**Ideal Answer:**
+Let $A \in \{0, 1\}^{N \times N}$ be the raw adjacency matrix.
+1. **Self-Loops ($\tilde{A} = A + I_N$):** Standard adjacency matrices have zero diagonals ($A_{ii} = 0$). Multiplying $A \mathbf{H}$ computes neighbor feature aggregations while completely dropping the node's own feature representation $\mathbf{h}_i$. Adding identity $I_N$ ensures each county preserves its own historical state during message passing.
+2. **Degree Matrix ($\tilde{D}_{ii} = \sum_{j} \tilde{A}_{ij}$):** Unnormalized aggregation causes high-degree nodes (counties surrounded by 8 neighbors) to have feature magnitudes $8\times$ larger than low-degree nodes (coastal counties with 2 neighbors), causing numerical instability and gradient explosion.
+3. **Symmetric Renormalization:**
+$$\hat{A}_{ij} = \frac{\tilde{A}_{ij}}{\sqrt{\tilde{D}_{ii} \tilde{D}_{jj}}}$$
+This scales message passing symmetrically, preserving the spectral radius of the graph operator and ensuring numerical stability across deep layers.
+
+---
+
+### Question 19 (Written / Deep Sequence Modeling)
+**Question:** Detail the mathematical operations inside the Causal Temporal GRU encoder. Why is causal temporal slicing required?
+**Ideal Answer:**
+Given input sequence $\mathbf{X}_i = [\mathbf{x}_{i, t-L+1}, \dots, \mathbf{x}_{i, t}] \in \mathbb{R}^{L \times d}$ over history length $L = 24$h:
+For each step $\tau \in \{1, \dots, L\}$:
+$$\mathbf{r}_\tau = \sigma(\mathbf{W}_{ir} \mathbf{x}_{i, \tau} + \mathbf{W}_{hr} \mathbf{h}_{\tau-1} + \mathbf{b}_r) \quad \text{(Reset Gate)}$$
+$$\mathbf{z}_\tau = \sigma(\mathbf{W}_{iz} \mathbf{x}_{i, \tau} + \mathbf{W}_{hz} \mathbf{h}_{\tau-1} + \mathbf{b}_z) \quad \text{(Update Gate)}$$
+$$\tilde{\mathbf{h}}_\tau = \tanh(\mathbf{W}_{in} \mathbf{x}_{i, \tau} + \mathbf{b}_{in} + \mathbf{r}_\tau \odot (\mathbf{W}_{hn} \mathbf{h}_{\tau-1} + \mathbf{b}_{hn})) \quad \text{(Candidate)}$$
+$$\mathbf{h}_\tau = (1 - \mathbf{z}_\tau) \odot \tilde{\mathbf{h}}_\tau + \mathbf{z}_\tau \odot \mathbf{h}_{\tau-1} \quad \text{(Hidden State)}$$
+- **Causal Slicing:** The sequence window strictly ends at cutoff $t$ (index $\tau \le t$). Hidden state $\mathbf{h}_L$ compresses history up to $t$ without looking ahead to $t+1$.
+
+---
+
+### Question 20 (Written / Architecture Flow)
+**Question:** Explain the complete forward pass of your Spatiotemporal Graph Neural Network from raw input tensor $\mathcal{X} \in \mathbb{R}^{B \times N \times L \times d}$ to final output probabilities $\hat{\mathbf{P}} \in [0, 1]^{B \times N}$.
+**Ideal Answer:**
+1. **Reshape for Temporal Encoding:** Flatten batch and county dimensions: $\mathbf{X}_{\text{flat}} \in \mathbb{R}^{(B \cdot N) \times L \times d}$.
+2. **Temporal Compression:** Pass through GRU:
+$$\mathbf{H}_{\text{temp}} = \text{GRU}(\mathbf{X}_{\text{flat}})_{[:, -1, :]} \in \mathbb{R}^{(B \cdot N) \times d_h}$$
+3. **Reshape for Graph Message Passing:** Restore spatial tensor: $\mathbf{H} \in \mathbb{R}^{B \times N \times d_h}$.
+4. **Spatial Graph Convolution:** For each batch $b$:
+$$\mathbf{Z}_b = \text{ReLU}\left( \hat{A} \mathbf{H}_b \mathbf{W}_{g} + \mathbf{b}_g \right) \in \mathbb{R}^{N \times d_g}$$
+5. **Prediction Readout Head:** Pass through linear classification layer with sigmoid:
+$$\hat{\mathbf{P}}_b = \sigma\left( \mathbf{Z}_b \mathbf{w}_o + b_o \right) \in [0, 1]^N$$
+
+---
+
+### Question 21 (Verbal / Spatial Ablation)
+**Question:** What is the spatial ablation study (Ablation A5 vs. A6), and what does the empirical comparison between Temporal GRU and Spatiotemporal GNN prove?
+**Ideal Answer:**
+- **Ablation A5:** Temporal GRU processing each county's historical context independently with zero spatial message passing (PR-AUC $= 0.8636$).
+- **Ablation A6:** Spatiotemporal GNN with identical GRU backbone followed by GCN message passing over $\hat{A}$ (PR-AUC $= 0.8698$).
+- **Proof / Insight:** The $+0.0062$ PR-AUC improvement demonstrates that spatial neighborhood context provides positive, but modest, incremental information beyond temporal dynamics alone. The comparison proves that the temporal outage trajectory within a county accounts for the dominant predictive signal, while spatial contiguity serves as a secondary synchronizing signal during regional weather events.
+
+---
+
+### Question 22 (Written / Permutation Hypothesis Testing)
+**Question:** Describe the randomized graph permutation test (Ablation A11). What specific hypothesis does it test regarding model capacity vs. true topological signal?
+**Ideal Answer:**
+- **Protocol:** We take the empirical adjacency matrix $A$ and generate a random permutation matrix $\Pi \in \{0, 1\}^{N \times N}$ to construct a shuffled adjacency matrix $A_{\text{perm}} = \Pi A \Pi^T$, preserving graph degree distribution and edge density while destroying actual geographic adjacency. We then retrain the Spatiotemporal GNN on $A_{\text{perm}}$.
+- **Hypothesis Tested:** If the GNN trained on $A_{\text{perm}}$ achieves the same performance gain as on the true geographic graph $A$, the improvement is merely due to extra non-linear parameter capacity rather than spatial topology.
+- **Result:** Performance on $A_{\text{perm}}$ dropped back to baseline GRU level (PR-AUC $= 0.8629$), confirming that the gain in A6 originates from genuine spatial contiguity rather than parameter overparameterization.
+
+---
+
+### Question 23 (Verbal / Tabular vs Deep Learning)
+**Question:** Why did tuned LightGBM with simple spatial lag features match or exceed the deep Spatiotemporal GNN on this tabular panel dataset?
+**Ideal Answer:**
+1. **Feature Interaction Efficiency:** Decision trees construct non-linear axis-aligned partitioning and complex threshold interactions (e.g., $\text{wind\_gust} > 22\text{ m/s} \wedge \text{soil\_moisture} > 0.45$) much more efficiently than smooth neural activation functions on small-to-medium tabular datasets.
+2. **Explicit Tabular Spatial Lags:** By feeding explicit engineered spatial lag features (e.g., `neighbor_outage_mean_lag1`, `neighbor_wind_max`) directly into LightGBM, the tree ensemble already captures first-order neighborhood signals without requiring end-to-end graph backpropagation.
+3. **Data Efficiency:** GNNs require substantial parameter fitting across multiple spatial and temporal layers, making them prone to overfitting on rare-event regimes where positive labels are sparse.
+
+---
+
+### Question 24 (Verbal / Scalability)
+**Question:** How would you scale this graph architecture if the domain expanded from a 10-county region to 3,143 US counties or 50,000 distribution feeder nodes?
+**Ideal Answer:**
+1. **Mini-Batch Neighborhood Sampling (GraphSAGE / Cluster-GCN):** Full-batch GCN over 50,000 nodes requires loading the entire $50,000 \times 50,000$ matrix into GPU memory. We would use uniform neighbor sampling (e.g., sample 5 neighbors per node over 2 hops) or METIS graph partitioning to train mini-batches independently.
+2. **Sparse Matrix Representation:** Store $\hat{A}$ as a `torch.sparse_coo_tensor`, reducing memory complexity from $\mathcal{O}(N^2)$ to $\mathcal{O}(|E|)$ (since county graphs are planar, $|E| \le 3N - 6$).
+3. **Hierarchical Graph Pooling:** Cluster local feeders into substation nodes and substations into county nodes using DiffPool or SAGPool.

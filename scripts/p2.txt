@@ -1,0 +1,86 @@
+## Part 2: Data Engineering, Provenance & Leakage Prevention (Questions 9?16)
+
+### Question 9 (Verbal / Data Provenance)
+**Question:** Describe the provenance of the three core data sources in your pipeline: EAGLE-I, NOAA ISD/ERA5, and NOAA Storm Events.
+**Ideal Answer:**
+1. **DOE EAGLE-I:** Ingests raw 15-minute county-level electric customer outage numbers collected via utility web scrapers and API integrations by the Department of Energy's CESER office.
+2. **NOAA Integrated Surface Database (ISD) / ERA5:** Hourly surface observations from certified ASOS/AWOS weather stations and atmospheric reanalysis mapped to county geometric centroids using inverse distance weighting.
+3. **NOAA Storm Events Database:** Curated, post-event meteorological impact reports compiled by the National Weather Service (NWS) detailing event types (tornado, high wind, blizzard), property damages, and episode timestamps.
+
+---
+
+### Question 10 (Written / Data Quality)
+**Question:** Why is assuming "missing EAGLE-I records equal zero outages" catastrophic for data fidelity, and what explicit missingness strategy did you implement?
+**Ideal Answer:**
+- **Why Catastrophic:** In EAGLE-I telemetry, missing records occur due to two completely distinct mechanisms: (1) genuine zero outages, or (2) API/scraper downtime, communication loss, or utility portal failures during severe storms when servers crash. Assuming missing equals zero turns the worst storm outages into false negatives (zero outages), polluting training labels.
+- **Implemented Missingness Strategy:**
+  1. We compute explicit coverage tracking indicators: $\text{is\_valid\_record}_{i, t} \in \{0, 1\}$.
+  2. If a county has missing telemetry for $< 3$ consecutive hours during normal weather, forward-fill interpolation is permitted.
+  3. If missingness spans $\ge 3$ hours or coincides with high weather severity, timestamps are marked invalid and excluded from target label calculation.
+  4. Outage denominators use official modeled utility customer counts, never population proxies.
+
+---
+
+### Question 11 (Verbal / Temporal Leakage)
+**Question:** Why is standard $k$-fold cross-validation fundamentally invalid for spatiotemporal outage forecasting, and how did you partition your multi-year dataset?
+**Ideal Answer:**
+- **Invalidity of Random $k$-Fold:** Weather systems and grid outages exhibit strong temporal autocorrelation spanning hours to days. If timestamp $t$ is in the test fold while $t-1$ and $t+1$ are in the training fold, the model simply memorizes the local temporal trajectory, causing extreme optimistic bias and zero real-world generalization.
+- **Chronological Split Protocol:**
+  - **Training:** 2017-01-01 00:00 to 2020-12-31 23:00 (4 full years, 35,064 hourly steps per county).
+  - **Validation:** 2021-01-02 00:00 to 2021-12-31 23:00 (1 full year, 8,736 steps per county).
+  - **Test:** 2022-01-02 00:00 to 2022-12-31 23:00 (1 full year, 8,736 steps per county).
+
+---
+
+### Question 12 (Written / Mathematical Leakage Guard)
+**Question:** Explain why a 24-hour purge blackout buffer between temporal splits is mathematically required when predicting over horizon $H = 24$h.
+**Ideal Answer:**
+Let the training partition end at timestamp $T_{\text{train}}$ (e.g., 2020-12-31 23:00).
+For an observation at $T_{\text{train}}$, the 24-hour lookahead target label is computed over the window:
+$$z_{i, T_{\text{train}}, 24} = \mathbb{I}\left( \max_{k \in \{1, \dots, 24\}} y_{i, T_{\text{train}}+k} \ge \tau \right)$$
+This target incorporates actual outage realizations up to $T_{\text{train}} + 24\text{h}$ (2021-01-01 23:00).
+If the validation set begins immediately at $T_{\text{train}} + 1\text{h}$, the historical features $\mathbf{x}_{i, T_{\text{val}}}$ in early validation samples would directly overlap with the future label window of late training samples.
+A **24-hour purge buffer** (blackout period from 2020-12-31 23:00 to 2021-01-01 23:00) strictly decouples the training target window from the validation feature context window.
+
+---
+
+### Question 13 (Written / Preprocessing Pipeline)
+**Question:** Write the pseudo-code or mathematical formulation for fitting standard scalers (mean, variance) without leaking test/validation statistics into training.
+**Ideal Answer:**
+Let $\mathbf{X}_{\text{train}} \in \mathbb{R}^{N_{\text{train}} \times d}$, $\mathbf{X}_{\text{val}} \in \mathbb{R}^{N_{\text{val}} \times d}$, and $\mathbf{X}_{\text{test}} \in \mathbb{R}^{N_{\text{test}} \times d}$.
+1. **Fit strictly on Training Data:**
+$$\hat{\boldsymbol{\mu}}_{\text{train}} = \frac{1}{N_{\text{train}}} \sum_{k=1}^{N_{\text{train}}} \mathbf{x}_{k, \text{train}}, \quad \hat{\boldsymbol{\sigma}}_{\text{train}}^2 = \frac{1}{N_{\text{train}}} \sum_{k=1}^{N_{\text{train}}} (\mathbf{x}_{k, \text{train}} - \hat{\boldsymbol{\mu}}_{\text{train}})^2$$
+2. **Transform Out-of-Sample:**
+$$\tilde{\mathbf{x}}_{k, \text{train}} = \frac{\mathbf{x}_{k, \text{train}} - \hat{\boldsymbol{\mu}}_{\text{train}}}{\hat{\boldsymbol{\sigma}}_{\text{train}} + \epsilon}$$
+$$\tilde{\mathbf{x}}_{k, \text{val}} = \frac{\mathbf{x}_{k, \text{val}} - \hat{\boldsymbol{\mu}}_{\text{train}}}{\hat{\boldsymbol{\sigma}}_{\text{train}} + \epsilon}, \quad \tilde{\mathbf{x}}_{k, \text{test}} = \frac{\mathbf{x}_{k, \text{test}} - \hat{\boldsymbol{\mu}}_{\text{train}}}{\hat{\boldsymbol{\sigma}}_{\text{train}} + \epsilon}$$
+Never compute $\hat{\boldsymbol{\mu}}$ or $\hat{\boldsymbol{\sigma}}$ on the concatenated dataset.
+
+---
+
+### Question 14 (Verbal / Metadata Isolation)
+**Question:** How was the NOAA Storm Events Database used in your framework, and why is using it as an input predictive feature an unacceptable error?
+**Ideal Answer:**
+- **Proper Use:** NOAA Storm Events data is used strictly as an *evaluation and post-hoc stratification layer* (e.g., classifying test set periods into Thunderstorm, Blizzard, High Wind, or Hurricane events to evaluate stratified performance and failure modes).
+- **Why Unacceptable as Feature:** NOAA Storm Events reports are compiled *days or weeks after* storm occurrences by NWS meteorologists, incorporating post-hoc damage surveys, tree counts, and utility outage summaries. Using these reports as predictive inputs at cutoff $t$ introduces massive lookahead leakage because that summary document did not exist at $t$.
+
+---
+
+### Question 15 (Written / Physics of Weather Interactions)
+**Question:** Define the Compound Wind-Rain Index $I_{\text{wind-rain}}$ and kinetic wind power proxies ($v^2, v^3$). What physical failure mechanisms do they model?
+**Ideal Answer:**
+1. **Wind Dynamic Pressure ($v^2$) & Kinetic Energy Flux ($v^3$):**
+   - Wind force on overhead conductors and utility poles scales quadratically with velocity: $F_{\text{drag}} = \frac{1}{2} \rho_{\text{air}} C_d A v^2$.
+   - Kinetic wind power density flux scales with $v^3$: $P_{\text{wind}} = \frac{1}{2} \rho_{\text{air}} v^3$.
+2. **Compound Wind-Rain Index ($I_{\text{wind-rain}} = v_{\text{gust}} \cdot \sqrt{R_{6}}$):**
+   - Prolonged precipitation ($R_6$, 6-hour accumulation) saturates soil, drastically reducing tree root shear strength in root-ball zones.
+   - High wind gusts ($v_{\text{gust}}$) apply dynamic bending moments to tree trunks and crowns.
+   - When saturated soil coincides with high gusts, tree uprooting and major limb shedding onto distribution lines increase non-linearly.
+
+---
+
+### Question 16 (Written / Meteorological Fronts)
+**Question:** Mathematically formulate the 3-hour barometric pressure gradient ($\Delta P_{3\text{h}}$) and thermal shock gradient ($\Delta T_{3\text{h}}$). What meteorological phenomena do they detect?
+**Ideal Answer:**
+$$\Delta P_{3\text{h}}(t) = P(t) - P(t-3\text{h}), \quad \Delta T_{3\text{h}}(t) = T(t) - T(t-3\text{h})$$
+- **Rapid Pressure Drops ($\Delta P_{3\text{h}} \ll 0$):** Indicate the arrival of severe convective storm fronts, squall lines, or mesoscale convective systems (MCS), which bring sudden gale-force downbursts before average hourly station wind speeds peak.
+- **Thermal Gradients ($\Delta T_{3\text{h}} \ll 0$):** Capture abrupt cold frontal passages associated with freezing rain, ice accumulation on conductors, and severe wind shifts.

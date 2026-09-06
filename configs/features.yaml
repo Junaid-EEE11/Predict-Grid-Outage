@@ -1,0 +1,59 @@
+horizons:
+- 6
+- 12
+- 24
+severe_thresholds:
+- 0.005
+- 0.01
+- 0.02
+- 0.05
+default_severe_threshold: 0.01
+target_variables:
+  classification: target_severe_h{H}
+  regression_fraction: target_max_fraction_h{H}
+  regression_log_count: target_max_log_customers_h{H}
+lag_windows_hours:
+- 1
+- 2
+- 3
+- 6
+- 12
+- 24
+- 48
+rolling_windows_hours:
+- 3
+- 6
+- 12
+- 24
+- 48
+weather_variables:
+- temperature_c
+- dew_point_c
+- relative_humidity
+- wind_speed_ms
+- wind_gust_ms
+- surface_pressure_hpa
+- precipitation_1h_mm
+- precipitation_accum_6h_mm
+- precipitation_accum_24h_mm
+weather_diff_hours:
+- 1
+- 3
+- 6
+calendar_features:
+- hour_sin
+- hour_cos
+- dayofweek_sin
+- dayofweek_cos
+- month_sin
+- month_cos
+- is_weekend
+spatial_features:
+  neighbor_outage_mean: true
+  neighbor_outage_max: true
+  neighbor_wind_max: true
+  neighbor_precip_max: true
+static_county_features:
+- log_modeled_customers
+- centroid_lat
+- centroid_lon

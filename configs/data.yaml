@@ -1,0 +1,61 @@
+project_name: grid_outage_resilience
+seed: 42
+raw_dir: data/raw
+interim_dir: data/interim
+processed_dir: data/processed
+synthetic_dir: data/synthetic_fixtures
+eaglei:
+  source_name: EAGLE-I (DOE/ORNL)
+  timestamp_col: run_start_time
+  fips_col: fips_code
+  county_col: county
+  state_col: state
+  customers_out_col: sum
+  total_customers_col: total_customers
+  raw_frequency: 15min
+  target_frequency: 1h
+  missing_strategy: flag_and_interpolate_short
+  max_short_gap_hours: 3
+  unobserved_threshold_fraction: 0.25
+weather:
+  source_name: NOAA ISD / Hourly Observational Product
+  timestamp_col: valid_time
+  fips_col: fips_code
+  variables:
+  - temperature_c
+  - dew_point_c
+  - relative_humidity
+  - wind_speed_ms
+  - wind_gust_ms
+  - surface_pressure_hpa
+  - precipitation_1h_mm
+  - precipitation_accum_6h_mm
+  - precipitation_accum_24h_mm
+noaa_events:
+  source_name: NOAA Storm Events Database
+  use_for_features: false
+  use_for_evaluation: true
+  event_types:
+  - Thunderstorm Wind
+  - High Wind
+  - Flood
+  - Flash Flood
+  - Winter Storm
+  - Ice Storm
+  - Tropical Storm
+  - Hurricane
+  - Tornado
+  - Heavy Snow
+splitting:
+  strategy: chronological
+  train_years:
+  - 2017
+  - 2018
+  - 2019
+  - 2020
+  val_years:
+  - 2021
+  test_years:
+  - 2022
+  purge_hours_between_splits: 24
+  transfer_region_held_out: transfer_state

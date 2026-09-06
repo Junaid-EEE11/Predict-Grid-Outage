@@ -1,0 +1,113 @@
+primary_region:
+  region_id: carolinas_core
+  name: Carolinas Multi-County Region
+  states:
+  - NC
+  - SC
+  counties:
+  - fips: '37001'
+    name: Alamance
+    state: NC
+    modeled_customers: 78000
+    lat: 36.04
+    lon: -79.4
+  - fips: '37063'
+    name: Durham
+    state: NC
+    modeled_customers: 145000
+    lat: 35.98
+    lon: -78.9
+  - fips: '37081'
+    name: Guilford
+    state: NC
+    modeled_customers: 240000
+    lat: 36.08
+    lon: -79.79
+  - fips: '37135'
+    name: Orange
+    state: NC
+    modeled_customers: 68000
+    lat: 35.97
+    lon: -79.12
+  - fips: '37183'
+    name: Wake
+    state: NC
+    modeled_customers: 480000
+    lat: 35.79
+    lon: -78.65
+  - fips: '37037'
+    name: Chatham
+    state: NC
+    modeled_customers: 36000
+    lat: 35.7
+    lon: -79.25
+  - fips: '37085'
+    name: Harnett
+    state: NC
+    modeled_customers: 62000
+    lat: 35.37
+    lon: -78.86
+  - fips: '37101'
+    name: Johnston
+    state: NC
+    modeled_customers: 98000
+    lat: 35.52
+    lon: -78.37
+  - fips: '37051'
+    name: Cumberland
+    state: NC
+    modeled_customers: 140000
+    lat: 35.05
+    lon: -78.83
+  - fips: '37155'
+    name: Robeson
+    state: NC
+    modeled_customers: 52000
+    lat: 34.64
+    lon: -79.1
+  - fips: '45041'
+    name: Florence
+    state: SC
+    modeled_customers: 64000
+    lat: 34.2
+    lon: -79.77
+  - fips: '45051'
+    name: Horry
+    state: SC
+    modeled_customers: 175000
+    lat: 33.91
+    lon: -79.07
+  adjacency_type: queen
+  include_self_loops: true
+transfer_region:
+  region_id: virginia_transfer
+  name: Virginia Geographic Transfer Region
+  states:
+  - VA
+  counties:
+  - fips: '51087'
+    name: Henrico
+    state: VA
+    modeled_customers: 155000
+    lat: 37.53
+    lon: -77.4
+  - fips: '51041'
+    name: Chesterfield
+    state: VA
+    modeled_customers: 160000
+    lat: 37.38
+    lon: -77.58
+  - fips: '51760'
+    name: Richmond City
+    state: VA
+    modeled_customers: 115000
+    lat: 37.54
+    lon: -77.45
+  - fips: '51085'
+    name: Hanover
+    state: VA
+    modeled_customers: 48000
+    lat: 37.76
+    lon: -77.49
+  adjacency_type: queen
+  include_self_loops: true

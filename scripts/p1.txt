@@ -1,0 +1,90 @@
+## Part 1: Research Formulation, Theoretical Foundations & Protocol (Questions 1?8)
+
+### Question 1 (Verbal / Conceptual)
+**Question:** What is the overarching research problem addressed in this project, and why does conventional machine learning literature on power outage forecasting often fail when deployed in actual electric distribution operations?
+**Ideal Answer:**
+The fundamental objective is to develop a mathematically leak-free, uncertainty-calibrated spatiotemporal forecasting pipeline for short-horizon ($H \in \{6, 12, 24\}$ hours) severe county-level distribution outages and propagate this calibrated predictive uncertainty into an AC physics-based distribution feeder simulation (OpenDSS IEEE 123-bus) to evaluate actionable grid resilience decisions.
+
+Conventional ML outage forecasting literature fails in real-world deployment due to four critical flaws:
+1. **Pervasive Data Leakage:** Use of random cross-validation or unpurged temporal splits where future weather/outage information leaks into training sets.
+2. **Tabular vs. Deep Learning Over-Claims:** Deep models (GNNs, LSTMs) are frequently claimed to outperform tree ensembles without rigorous ablations, proper tuning of baselines, or spatial graph randomization tests.
+3. **Probability Miscalibration:** Standard classifiers produce overconfident risk estimates on highly imbalanced severe outage events ($< 1.5\%$ prevalence), misleading risk-sensitive grid operators.
+4. **Disconnection from Downstream Physics:** Models terminate at statistical metrics (e.g., F1-score) without demonstrating how predicted outage risks impact physical power flows, bus voltages, unserved energy, and component hardening decisions.
+
+---
+
+### Question 2 (Written / Mathematical)
+**Question:** Formulate the mathematical definitions of Task A (Severe Outage Classification) and Task B (Outage Severity Quantile Regression), explicitly defining the information filtration $\mathcal{F}_t$, target variables, and horizon windows.
+**Ideal Answer:**
+Let $V = \{1, \dots, N\}$ represent the set of counties, and $t \in \{1, \dots, T\}$ represent hourly timestamps. Let $\mathbf{x}_{i, \tau} \in \mathbb{R}^d$ be the feature vector for county $i$ at time $\tau$. The causal information filtration available at prediction cutoff time $t$ is defined as:
+$$\mathcal{F}_t = \sigma\left( \{ \mathbf{x}_{i, \tau} : i \in V, \tau \le t \} \right)$$
+
+Let $y_{i, t+k} = \frac{\text{Customers Out}_{i, t+k}}{\text{Total Modeled Customers}_i} \in [0, 1]$ be the normalized customer outage fraction at future time step $t+k$.
+
+1. **Task A (Severe Outage Classification):** Given horizon $H \in \{6, 12, 24\}$ and severe threshold $\tau = 0.01$ (1% of customers), the binary target $z_{i, t, H}$ and predicted calibrated probability $\hat{p}_{i, t, H}$ are:
+$$z_{i, t, H} = \mathbb{I}\left( \max_{k \in \{1, \dots, H\}} y_{i, t+k} \ge \tau \right)$$
+$$\hat{p}_{i, t, H} = \mathbb{P}(z_{i, t, H} = 1 \mid \mathcal{F}_t)$$
+
+2. **Task B (Outage Severity Quantile Regression):** Predict the maximum continuous outage fraction over horizon $H$:
+$$y_{i, t, H}^{\max} = \max_{k \in \{1, \dots, H\}} y_{i, t+k}$$
+alongside conditional quantiles $\hat{q}_{\alpha}(i, t, H) = \inf \{ q : \mathbb{P}(y_{i, t, H}^{\max} \le q \mid \mathcal{F}_t) \ge \alpha \}$ for $\alpha \in \{0.05, 0.50, 0.95\}$.
+
+---
+
+### Question 3 (Verbal / Methodology Defense)
+**Question:** Walk the committee through your 6 pre-registered hypotheses (H1?H6). Which hypotheses were confirmed, and which yielded surprising or negative results?
+**Ideal Answer:**
+- **H1 (Weather + Lagged Outages > Baselines):** *Confirmed.* LightGBM (PR-AUC $= 0.8740$) and Temporal GRU ($0.8731$) dramatically outperformed Climatology ($0.1437$) and Persistence ($0.1367$) across all horizons.
+- **H2 (Spatial Benefit Localized to Synoptic Events):** *Confirmed.* Spatial message passing over county contiguity graphs provided marginal gain overall ($+0.0062$ PR-AUC over non-graph GRU), with gains concentrated strictly during large-scale convective fronts.
+- **H3 (GNN Parity with Gradient Boosting):** *Confirmed.* The Spatiotemporal GNN (PR-AUC $= 0.8698$) did not outperform tuned LightGBM ($0.8740$), demonstrating that tabular tree models with engineered spatial lags remain highly competitive on panel datasets.
+- **H4 (High-Capacity Models are Miscalibrated):** *Confirmed.* Raw LightGBM and neural models exhibited high uncalibrated ECE ($0.0412$), despite strong ranking capability.
+- **H5 (Validation-Only Calibration & Conformal Guarantees):** *Confirmed.* Post-hoc isotonic calibration reduced ECE to $0.0115$, and split conformal prediction achieved exact $90.43\%$ coverage for nominal $90\%$ intervals on the 2022 test set.
+- **H6 (Non-linear Resilience Uncertainty Propagation):** *Confirmed.* High-risk predictive scenarios widened the downstream simulated 95th percentile EENS ($6,850.0$ kWh) by $> 42\%$ over the point estimate ($4,810.5$ kWh), validating the necessity of probabilistic grid planning.
+
+---
+
+### Question 4 (Verbal / Scientific Philosophy)
+**Question:** Why is reporting parity or negative results (such as the GNN not outperforming LightGBM) scientifically superior to forcing a narrative where deep learning always wins?
+**Ideal Answer:**
+In computational engineering, publication bias often incentives artificial hyperparameter selection, weak baselines, or selective data slicing to show that complex deep learning models dominate. Reporting honest parity or negative results:
+1. **Establishes True Scientific Benchmarks:** Shows that when tree ensembles are provided with domain-engineered physical and spatial features, they can match or exceed recurrent/graph neural architectures with orders of magnitude lower compute cost.
+2. **Prevents Industry Misinvestment:** Prevents utilities from deploying brittle, computationally demanding deep architectures when robust tree ensembles perform equivalently.
+3. **Upholds Pre-Registration Integrity:** Adheres to open-science standards where hypotheses (H3) are pre-registered before empirical evaluation.
+
+---
+
+### Question 5 (Written / Analytical)
+**Question:** Explain the difference between predicting individual component failure vs. predicting county-level outage fractions, and why this distinction is critical for downstream simulation.
+**Ideal Answer:**
+- **County-Level Outage Fraction (Macro-Scale):** Represents the aggregate proportion of customers without power across a large political jurisdiction (EAGLE-I telemetry). It captures regional storm severity and system-level disruption, but does not provide circuit-level physical failure locations.
+- **Component Failure (Micro-Scale):** Represents the discrete physical flashover, conductor break, or pole failure of a specific overhead line segment (e.g., Line 1-2 in IEEE 123-bus).
+- ** ????stream Simulation Distinction:** We cannot claim that EAGLE-I directly predicts which specific wire on a 123-bus test feeder breaks. Instead, the macro-level calibrated predictive distribution $\hat{p}$ parameterizes the stress regime (failure rates $\lambda_{\text{fail}}$) of a Monte Carlo contingency generator, propagating statistical uncertainty into physical power-flow simulations.
+
+---
+
+### Question 6 (Written / Sensitivity Analysis)
+**Question:** How was the severe outage threshold $\tau = 0.01$ selected, and what sensitivity checks were conducted across other thresholds?
+**Ideal Answer:**
+The threshold $\tau = 0.01$ (1% of modeled county customers without power) represents a standard operational emergency threshold where utilities trigger local emergency operations centers (EOCs) and mutual assistance crew staging.
+- **Sensitivity Grid:** We evaluated $\tau \in \{0.005, 0.01, 0.02, 0.05\}$ ($0.5\%, 1.0\%, 2.0\%, 5.0\%$).
+- **Findings:** As $\tau$ increases from $0.005$ to $0.05$, class imbalance becomes more acute (event prevalence drops from $3.2\%$ to $0.3\%$). Across all thresholds, the relative model rankings remained consistent: LightGBM and Temporal GRU retained superior PR-AUC and Brier scores, while persistence degraded progressively.
+
+---
+
+### Question 7 (Verbal / Operations)
+**Question:** What is the practical operational significance of lead horizons $H = 6$h, $12$h, and $24$h in an electric utility control center?
+**Ideal Answer:**
+- **$H = 24$ Hours (Strategic Resource Allocation):** Used for requesting regional mutual aid crews, placing line contractors on standby, and securing heavy equipment.
+- **$H = 12$ Hours (Tactical Crew Staging):** Used for pre-positioning repair crews, tree-trimming units, and mobile diesel generators at designated service substations.
+- **$H = 6$ Hours (Operational Switching & Feeder Reconfiguration):** Used for pre-storm switching, enabling automated sectionalizing, transferring critical loads (hospitals, water treatment) to alternate feeds, and locking out automatic reclosers.
+
+---
+
+### Question 8 (Verbal / Research Ethics)
+**Question:** What is HARKing, and how does your experimental protocol guarantee that HARKing was avoided?
+**Ideal Answer:**
+**HARKing** (*Hypothesizing After Results are Known*) occurs when researchers inspect test-set results and retroactively formulate hypotheses to present post-hoc observations as a priori predictions.
+This project prevented HARKing by:
+1. Formally documenting and version-controlling hypotheses H1?H6 in `docs/research_protocol.md` before executing model evaluation scripts.
+2. Freezing all model architectures, feature definitions, and calibration algorithms using validation data (2021) prior to evaluating the held-out test set (2022).
+3. Publishing complete failure modes and drift analyses without altering initial hypotheses.

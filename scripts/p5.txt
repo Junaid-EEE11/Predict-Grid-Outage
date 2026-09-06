@@ -1,0 +1,89 @@
+## Part 5: Physics-Based Grid Resilience & OpenDSS Simulation (Questions 33?40)
+
+### Question 33 (Verbal / Power Systems Domain)
+**Question:** Describe the IEEE 123-bus radial distribution feeder testbed. What are its nominal voltage levels, topology features, and aggregate active/reactive loads?
+**Ideal Answer:**
+- **Topology & Voltage:** The IEEE 123-bus feeder is a benchmark radial distribution system operating at a nominal $4.16$ kV line-to-line ($2.4$ kV line-to-neutral) voltage, fed from a $115\text{ kV} / 4.16\text{ kV}$ substation transformer at Bus 150.
+- **Circuit Characteristics:** Features three-phase main trunk lines, two-phase and single-phase overhead laterals, unbalanced spot and distributed loads, and voltage regulators.
+- **Aggregate Base Load:** Nominal total active power load is $P_{\text{base}} = 3,490$ kW ($1,742.1$ kW active load in benchmark configuration) and reactive power load $Q_{\text{base}} = 1,920$ kVAR, serving diverse commercial and residential load points.
+
+---
+
+### Question 34 (Written / Power-Flow Mathematics)
+**Question:** How does `OpenDSSDirect.py` solve the non-linear multi-phase AC power-flow equations, and how do you computationally verify convergence and bus voltage feasibility?
+**Ideal Answer:**
+OpenDSS formulates the multi-phase network using the nodal admittance matrix $\mathbf{Y}_{\text{bus}}$ and solves the non-linear current injection equations using the Fixed-Point / Current-Injection Iteration method:
+$$\mathbf{V}^{(k+1)} = \mathbf{Y}_{\text{bus}}^{-1} \mathbf{I}_{\text{inj}}(\mathbf{V}^{(k)})$$
+where current injection at node $m$, phase $\phi$ is $\mathbf{I}_{m, \phi} = \left( \frac{P_{m, \phi} + j Q_{m, \phi}}{\mathbf{V}_{m, \phi}} \right)^*$.
+- **Verification of Convergence:** `dss.Solution.Converged()` returns `True`.
+- **Voltage Feasibility:** Retrieve bus voltages via `dss.Circuit.AllBusMagPu()`. Feasible operating range is ANSI C84.1 Range A ($0.95 \le V_{\text{pu}} \le 1.05$). Undervoltage violations ($V < 0.95$ pu) and overvoltages ($V > 1.05$ pu) are identified via boolean thresholding on the voltage array.
+
+---
+
+### Question 35 (Written / Stochastic Coupling)
+**Question:** Detail the mathematical mechanism that couples county-level statistical forecast probabilities $\hat{p}$ (or conformal quantiles) to Monte Carlo line outage contingencies on the IEEE 123-bus feeder.
+**Ideal Answer:**
+We translate continuous predictive risk $\hat{p} \in [0, 1]$ into discrete stress scenario tiers $\mathcal{S} \in \{ \text{Low}, \text{Moderate}, \text{High}, \text{Extreme} \}$:
+$$\mathcal{S}(\hat{p}) = \begin{cases} 
+\text{Low} & \text{if } \hat{p} < 0.10 \\
+\text{Moderate} & \text{if } 0.10 \le \hat{p} < 0.40 \\
+\text{High} & \text{if } 0.40 \le \hat{p} < 0.75 \\
+\text{Extreme} & \text{if } \hat{p} \ge 0.75 
+\end{cases}$$
+For scenario tier $\mathcal{S}$, each line segment $l \in \mathcal{L}$ has independent failure probability $p_{\text{fail}}(l \mid \mathcal{S})$ and number of simultaneous line outages $K_s \sim \text{Poisson}(\lambda_\mathcal{S})$ where $\lambda_{\text{Low}} = 0.5, \lambda_{\text{Mod}} = 2.0, \lambda_{\text{High}} = 4.5, \lambda_{\text{Ext}} = 8.0$.
+In each Monte Carlo realization $s \in \{1, \dots, 500\}$, lines are tripped in OpenDSS via `dss.run_command(f"open line.{line} 1")` and `dss.run_command(f"open line.{line} 2")`.
+
+---
+
+### Question 36 (Verbal / Methodological Transparency)
+**Question:** Why is it scientifically essential to explicitly disclose that the IEEE 123-bus feeder is a downstream methodological case study rather than a geographic 1-to-1 digital twin of an EAGLE-I county?
+**Ideal Answer:**
+Real utility distribution network GIS schematics and circuit models are protected under critical energy infrastructure information (CEII) regulations and are not publicly available alongside national EAGLE-I county data. Claiming that an IEEE benchmark feeder represents a specific county would be a fabrication.
+Disclosing this distinction preserves scientific integrity: the research demonstrates **how probabilistic outage forecasts can be propagated into any distribution feeder model** to generate risk-quantified resilience metrics, establishing a reusable methodological pipeline for utilities that possess their own proprietary GIS network models.
+
+---
+
+### Question 37 (Written / Power-Flow Islanding)
+**Question:** How does OpenDSS compute unserved active load $P_{\text{unserved}}$ when radial line contingencies isolate downstream network sections?
+**Ideal Answer:**
+When line $l$ is opened, downstream lateral sections become islanded from the substation swing bus (Bus 150).
+1. OpenDSS performs topology trace and current injection iterations.
+2. In the islanded subgraphs without generation sources, bus voltages collapse to $0.0$ kV, and connected loads cannot draw power.
+3. Total served active load is queried: $P_{\text{served}}(s) = -\text{Re}(\text{Substation Total Power})$.
+4. Unserved load is the deficit from nominal base load:
+$$P_{\text{unserved}}(s) = \max(0, \; P_{\text{base}} - P_{\text{served}}(s))$$
+
+---
+
+### Question 38 (Written / Resilience Metrics)
+**Question:** Mathematically define Expected Energy Not Served (EENS) and the Resilience Loss Index ($\Delta R$) over an exponential restoration trajectory $P_{\text{served}}(t) = P_{\text{base}} - P_{\text{unserved}} \cdot e^{-\lambda_{\text{restore}} t}$.
+**Ideal Answer:**
+Given initial unserved capacity $P_{\text{unserved}}$ at contingency onset ($t=0$) and restoration rate $\lambda_{\text{restore}} = \frac{\ln(10)}{T_{\text{restore}}}$ over horizon $T_{\text{restore}} = 12$ hours:
+1. **Unserved Power Trajectory:**
+$$P_{\text{unserved}}(t) = P_{\text{unserved}} \cdot e^{-\lambda_{\text{restore}} t}$$
+2. **Expected Energy Not Served (EENS):**
+$$\text{EENS} = \int_{0}^{T_{\text{restore}}} P_{\text{unserved}}(t) \, dt = P_{\text{unserved}} \left[ \frac{1 - e^{-\lambda_{\text{restore}} T_{\text{restore}}}}{\lambda_{\text{restore}}} \right]$$
+3. **Resilience Loss Index ($\Delta R$):** Normalized area of the degraded performance triangle:
+$$\Delta R = \frac{\int_{0}^{T_{\text{restore}}} (P_{\text{base}} - P_{\text{served}}(t)) \, dt}{P_{\text{base}} \cdot T_{\text{restore}}} = \frac{\text{EENS}}{P_{\text{base}} \cdot T_{\text{restore}}} \in [0, 1]$$
+
+---
+
+### Question 39 (Written / Hardening Decision Optimization)
+**Question:** Define the Component Criticality Index $\gamma_l$ for distribution lines. How was this metric used to select the Top-5 line hardening candidates?
+**Ideal Answer:**
+The Component Criticality Index $\gamma_l$ measures the marginal expected unserved load caused specifically when line segment $l$ is in a faulted state under high-risk storm conditions:
+$$\gamma_l = \mathbb{E}_{s \sim \text{High}}\,[P_{\text{unserved}}(s) \mid \text{line } l \text{ faulted}]$$
+- **Ranking & Selection:** We evaluate $\gamma_l$ across all 50 line segments in the IEEE 123-bus feeder. Lines located on the three-phase main substation trunk (e.g., `Line_1_2`, `Line_2_3`, `Line_3_4`, `Line_4_5`, `Line_5_6`) exhibit the highest $\gamma_l$ values because their failure de-energizes all downstream lateral branches.
+
+---
+
+### Question 40 (Verbal / Hardening Quantitative Results)
+**Question:** What were the quantitative outcomes of your Top-5 line hardening decision experiment under the High-Risk storm scenario?
+**Ideal Answer:**
+In the High-Risk Monte Carlo scenario ensemble (500 iterations):
+- **Baseline Unhardened Feeder:** Average simulated unserved energy $= 8,867.5$ kWh per storm event.
+- **Top-5 Hardened Feeder:** Average simulated unserved energy $= 6,360.7$ kWh per storm event.
+- **Quantitative Improvement:**
+  - Net unserved energy saved: **$2,506.8$ kWh** per storm event.
+  - Resilience loss reduction: **$28.27\%$**.
+  - Severe undervoltage bus violations ($V < 0.95$ pu) decreased from $14.2$ occurrences/scenario to $2.1$ occurrences/scenario.

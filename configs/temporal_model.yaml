@@ -1,0 +1,18 @@
+architecture: GRU
+context_window_hours: 24
+candidate_windows:
+- 6
+- 12
+- 24
+- 48
+hidden_dim: 64
+num_layers: 2
+dropout: 0.2
+bidirectional: false
+learning_rate: 0.001
+weight_decay: 0.0001
+batch_size: 64
+epochs: 30
+early_stopping_patience: 5
+pos_weight: 5.0
+device: cpu

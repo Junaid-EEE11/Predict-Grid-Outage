@@ -1,0 +1,21 @@
+temporal_encoder:
+  type: GRU
+  hidden_dim: 48
+  num_layers: 1
+  dropout: 0.2
+graph_layer:
+  type: GraphSAGE
+  hidden_dim: 48
+  num_layers: 2
+  dropout: 0.2
+  aggregation: mean
+prediction_head:
+  hidden_dim: 32
+  dropout: 0.2
+learning_rate: 0.001
+weight_decay: 0.0001
+batch_size: 32
+epochs: 30
+early_stopping_patience: 5
+pos_weight: 5.0
+random_state: 42

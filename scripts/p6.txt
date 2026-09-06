@@ -1,0 +1,109 @@
+## Part 6: Empirical Results, Failure Analysis, Distribution Shifts & Defense Scenarios (Questions 41?50)
+
+### Question 41 (Verbal / Benchmark Summary)
+**Question:** Summarize the performance of all 6 classification models on the 2022 test set (Table 1). Why did Persistence fail so completely over the 24-hour horizon?
+**Ideal Answer:**
+- **Results Summary (24h Lead, Held-Out 2022 Test Set):**
+  - LightGBM: PR-AUC $= 0.8740$, ROC-AUC $= 0.8964$, Brier $= 0.02723$, ECE $= 0.0050$.
+  - Temporal GRU: PR-AUC $= 0.8731$, ROC-AUC $= 0.9133$, Brier $= 0.02925$, ECE $= 0.0034$.
+  - Spatiotemporal GNN: PR-AUC $= 0.8698$, ROC-AUC $= 0.8924$, Brier $= 0.03038$, ECE $= 0.0074$.
+  - Logistic GLM: PR-AUC $= 0.8675$, ROC-AUC $= 0.9008$, Brier $= 0.05088$, ECE $= 0.1152$.
+  - Climatology: PR-AUC $= 0.1437$, ROC-AUC $= 0.5000$, Brier $= 0.12306$.
+  - Persistence: PR-AUC $= 0.1367$, ROC-AUC $= 0.4673$, Brier $= 0.46605$, ECE $= 0.4661$.
+- **Why Persistence Failed:** Persistence assumes that what is happening right now ($t=0$) will continue 24 hours into the future. Over a 24-hour horizon, fast-moving convective storms strike and clear out within 4?8 hours, while utility repair crews restore power. A county experiencing severe outages at $t=0$ has usually restored power by $t=24$h (causing false alarms), and a calm county at $t=0$ can experience a new storm arriving at $t=18$h (causing missed outages).
+
+---
+
+### Question 42 (Written / Multi-Horizon Dynamics)
+**Question:** Analyze the multi-horizon predictive performance degradation from $H = 6$h to $H = 24$h (Table 2). What meteorological dynamics explain this decline?
+**Ideal Answer:**
+- **Performance Trajectory:**
+  - $H = 6$h: LightGBM PR-AUC $= 0.8124$, Brier $= 0.0082$.
+  - $H = 12$h: LightGBM PR-AUC $= 0.7415$, Brier $= 0.0124$.
+  - $H = 24$h: LightGBM PR-AUC $= 0.6832$, Brier $= 0.0178$.
+- **Meteorological Drivers:**
+  1. **Convective Cell Initiation Uncertainty:** At 6 hours, radar reflectivity and upstream barometric pressure drops directly indicate oncoming squall lines. At 24 hours, convective storm timing and localized microburst tracks exhibit higher atmospheric chaotic variance.
+  2. **Cumulative Lead Dispersion:** Over 24 hours, storm velocity variations introduce uncertainty in the exact arrival timestamp, widening the predictive probability distribution.
+
+---
+
+### Question 43 (Verbal / Feature Group Ablations)
+**Question:** Walk the committee through the feature ablation results (A1?A4 in Table 4). What critical conclusion emerges regarding weather physics vs. historical outage memory?
+**Ideal Answer:**
+- **Ablation Results:**
+  - A1 (Weather Only, 20 features): PR-AUC $= 0.4695$, ROC-AUC $= 0.6420$, Brier $= 0.0886$.
+  - A2 (Lagged Outages Only, 25 features): PR-AUC $= 0.8615$, ROC-AUC $= 0.9032$, Brier $= 0.0281$.
+  - A3 (Weather + Lagged Outages, 45 features): PR-AUC $= 0.8684$, ROC-AUC $= 0.9043$, Brier $= 0.0261$.
+  - A4 (Full Features: Weather + Outage + Calendar + Static, 52 features): PR-AUC $= 0.8740$, ROC-AUC $= 0.8964$, Brier $= 0.0272$.
+- **Critical Conclusion:** Weather features alone (A1) provide poor baseline discrimination ($0.4695$) because strong wind gusts do not always cause outages unless grid infrastructure is already vulnerable or damaged. Outage history (A2) provides the primary foundation ($0.8615$) capturing existing grid fragility. Combining weather physics with outage dynamics (A3 & A4) unlocks the highest performance ($0.8740$), proving that storm impact is an interaction between atmospheric stress and grid infrastructure state.
+
+---
+
+### Question 44 (Written / Interpretability & Importance)
+**Question:** Based on Tree Gain and Permutation Feature Importance (Figure 6), what are the top 5 most critical features in the model, and what physical role do they play?
+**Ideal Answer:**
+1. **`outage_roll_max_24h` ($34.2\%$ importance):** Captures cumulative regional damage and active restoration state over the prior 24 hours.
+2. **`outage_fraction_lag_1h` ($24.1\%$ importance):** Captures immediate boundary conditions and recent outage momentum.
+3. **`wind_rain_compound_index` ($15.6\%$ importance):** Quantifies simultaneous soil saturation and gust momentum, directly modeling tree root failure and conductor strikes.
+4. **`wind_speed_cube` ($10.4\%$ importance):** Models the non-linear kinetic wind power density flux driving structural stress on utility poles.
+5. **`pressure_diff_3h` ($7.1\%$ importance):** Captures sudden barometric drops signaling active convective squall fronts.
+
+---
+
+### Question 45 (Verbal / Failure Analysis - False Negatives)
+**Question:** Analyze the worst False Negatives identified in your failure analysis audit (Table 7). What environmental conditions caused the model to underpredict severe outages?
+**Ideal Answer:**
+The worst False Negatives occurred during **isolated microbursts, localized downbursts, and unforecasted ice/freezing rain events**:
+- **Root Cause 1 (Spatial Sensor Sparsity):** Weather stations at airport ASOS locations did not capture localized microbursts (e.g., $35\text{ m/s}$ downburst spanning a $2\text{ km}$ lateral) located $25\text{ km}$ away from the station centroid.
+- **Root Cause 2 (Ice Loading Absence):** Radial ice accretion on conductors combined with moderate winds ($12\text{ m/s}$) causes high mechanical stress and conductor galloping, but standard temperature and rain metrics do not explicitly model radial ice thickness without dedicated accretion physics.
+
+---
+
+### Question 46 (Verbal / Failure Analysis - False Positives)
+**Question:** Analyze the worst False Positives in your failure analysis audit (Table 8). Why does high forecasted wind sometimes fail to produce expected outages?
+**Ideal Answer:**
+False Positives occurred predominantly during **dry, fast-moving cold front passages in late winter/early spring**:
+- **Root Cause (Low Antecedent Soil Moisture & Defoliation):** High wind gusts ($> 25\text{ m/s}$) occurred when trees were fully defoliated (leaf-off conditions, drastically reducing wind aerodynamic drag on crowns) and antecedent soil was dry/frozen (high soil shear strength preventing root pullout).
+- **Model Behavior:** The model observed high wind gusts and predicted a severe outage ($p > 0.80$), but the physical resistance of the defoliated tree canopy prevented branch failures.
+
+---
+
+### Question 47 (Written / Distribution Shift Statistics)
+**Question:** Describe the Kolmogorov-Smirnov (KS) two-sample test and 1-Wasserstein distance metrics used to audit dataset shift between the 2017?2020 training period and 2022 test period (Table 6).
+**Ideal Answer:**
+Let $F_{\text{train}}(x)$ and $F_{\text{test}}(x)$ be empirical cumulative distribution functions (ECDFs) of feature $X$.
+1. **Kolmogorov-Smirnov Statistic:** Maximum vertical deviation between ECDFs:
+$$D_{\text{KS}} = \sup_x |F_{\text{train}}(x) - F_{\text{test}}(x)|$$
+Under null hypothesis $H_0: F_{\text{train}} = F_{\text{test}}$, $p$-values $> 0.05$ indicate no statistically significant shift.
+2. **1-Wasserstein Distance (Earth Mover's Distance):**
+$$\mathcal{W}_1(F_{\text{train}}, F_{\text{test}}) = \int_{-\infty}^{\infty} |F_{\text{train}}(x) - F_{\text{test}}(x)| \, dx$$
+- **Findings (Table 6):** All KS statistics were small ($D_{\text{KS}} < 0.006$), and Wasserstein distances were minimal ($< 0.07$ across weather features), proving that the 2022 test set was structurally representative and did not suffer from anomalous regime drift.
+
+---
+
+### Question 48 (Verbal / Operational Control Center Decision)
+**Question:** How would an electric utility control center operator utilize your calibrated probability $\hat{p} = 0.65$ and conformal interval $[0.02, 0.08]$ differently from a single point prediction $\hat{y} = 0.03$?
+**Ideal Answer:**
+- **Point Prediction ($\hat{y} = 0.03$):** Suggests only $3\%$ of customers will lose power?a routine operational event that would likely lead the operator to take no special action.
+- **Calibrated Probability & Conformal Interval ($\hat{p} = 0.65, [0.02, 0.08]$):**
+  - $\hat{p} = 0.65$ tells the operator there is a **$65\%$ probability** of exceeding the severe emergency threshold ($\ge 1\%$ outages).
+  - The conformal interval $[0.02, 0.08]$ reveals that in the upper tail, up to **$8\%$ of the county (tens of thousands of customers)** could be de-energized.
+  - **Action Taken:** The operator pre-activates emergency storm rosters, stages mutual aid line crews at the service center, and runs OpenDSS contingency checks on vulnerable lateral feeders before the storm makes landfall.
+
+---
+
+### Question 49 (Verbal / Real-World Defense)
+**Question:** If a utility executive challenged your research, saying: "Why shouldn't we just use a commercial weather forecast API with a basic wind-threshold rule-of-thumb?", how would you defend your framework?
+**Ideal Answer:**
+1. **Rule-of-Thumb Inadequacy:** Simple wind thresholds (e.g., "alert if gusts $> 40$ mph") generate high false alarm rates during dry conditions and miss catastrophic outages during compound wind-rain events with lower wind speeds.
+2. **Quantified Probabilistic Risk:** Commercial weather APIs output meteorological forecasts, not electrical grid impact probabilities. Our framework translates atmospheric conditions + grid historical vulnerability into rigorous, calibrated probabilities and conformal prediction intervals.
+3. **Actionable Downstream Physical Hardening:** Static weather alerts do not tell an engineer which distribution circuits will experience voltage violations or how much energy will be unserved. Our integration with OpenDSS computes exact Expected Energy Not Served (EENS) and identifies the Top-5 critical lines to harden, delivering a validated $28.27\%$ resilience gain.
+
+---
+
+### Question 50 (Verbal / Future PhD Dissertation Roadmap)
+**Question:** As a prospective PhD student, what are the top 3 fundamental research extensions you plan to pursue building upon this project?
+**Ideal Answer:**
+1. **Substation & Feeder-Level Spatiotemporal Physics:** Scale from county-level telemetry to circuit-level Advanced Metering Infrastructure (AMI) smart meter telemetry, constructing Physics-Informed Graph Neural Networks (PIGNNs) that embed branch power flow laws (DistFlow) into graph message passing.
+2. **Online Adaptive Conformal Prediction under Non-Stationary Climate Shift:** Develop Locally-Adaptive and Online Conformal Prediction algorithms that dynamically update nonconformity bounds during evolving multi-day hurricane tracks without assuming exchangeability.
+3. **Stochastic Optimal Resilience Scheduling & Crew Dispatch:** Formulate a two-stage stochastic Mixed-Integer Linear Program (MILP) coupling calibrated outage scenario probabilities directly to optimal pre-storm mobile generator placement, automated tie-switch reconfiguration, and post-storm repair crew routing.

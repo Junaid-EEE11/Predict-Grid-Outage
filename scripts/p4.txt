@@ -1,0 +1,85 @@
+## Part 4: Uncertainty Quantification, Calibration & Conformal Prediction (Questions 25?32)
+
+### Question 25 (Verbal / Metric Selection)
+**Question:** Why is standard classification accuracy fundamentally misleading for severe outage risk forecasting, and why must Precision-Recall AUC (PR-AUC) and Brier score take precedence?
+**Ideal Answer:**
+- **The Accuracy Paradox:** In severe outage datasets, the positive class (severe outage fraction $\ge 0.01$) occurs in only $\sim 1.5\%$ of timestamps. A trivial model that outputs constant zero achieves $98.5\%$ accuracy while having **zero operational value** and failing to predict all catastrophic blackouts.
+- **Why PR-AUC:** Precision-Recall AUC focuses exclusively on the positive minority class, penalizing false alarms (low precision) and missed outages (low recall) without being inflated by true negative non-event hours.
+- **Why Brier Score:** Brier score ($\|\hat{p} - y\|^2$) evaluates probability calibration and sharp risk differentiation across the full $[0, 1]$ spectrum rather than thresholded binary classifications.
+
+---
+
+### Question 26 (Written / Mathematical Calibration Metrics)
+**Question:** State the mathematical definition of the Brier Score and write its classic Murphy three-component decomposition (Reliability, Resolution, Uncertainty).
+**Ideal Answer:**
+Given binary outcome $y_k \in \{0, 1\}$ and predicted probability $\hat{p}_k \in [0, 1]$ over $M$ samples:
+$$\text{BS} = \frac{1}{M} \sum_{k=1}^M (\hat{p}_k - y_k)^2$$
+Grouping predictions into $B$ discrete probability bins with bin forecast $\bar{p}_b$ and empirical event frequency $\bar{y}_b$:
+$$\text{BS} = \underbrace{\sum_{b=1}^B w_b (\bar{p}_b - \bar{y}_b)^2}_{\text{Reliability (Calibration Error) } \downarrow} - \underbrace{\sum_{b=1}^B w_b (\bar{y}_b - \bar{y})^2}_{\text{Resolution (Discrimination) } \uparrow} + \underbrace{\bar{y}(1 - \bar{y})}_{\text{Uncertainty (Base Rate)}}$$
+- **Reliability:** Measures how close predicted probabilities are to observed empirical frequencies (perfect $= 0$).
+- **Resolution:** Measures how much conditional event rates differ from the climate base rate (higher is better).
+- **Uncertainty:** Inherent variance of the phenomenon ($ar{y}(1-ar{y})$), independent of the model.
+
+---
+
+### Question 27 (Written / Calibration Error Formulations)
+**Question:** Define Expected Calibration Error (ECE) and Maximum Calibration Error (MCE) using $B$ equally spaced or quantile-based bins.
+**Ideal Answer:**
+Partition the probability interval $[0, 1]$ into $B$ bins $\{I_b\}_{b=1}^B$. Let $B_b$ be the set of sample indices with $\hat{p}_k \in I_b$, $M_b = |B_b|$, and $M = \sum M_b$.
+The empirical accuracy (event frequency) $\text{acc}(B_b)$ and average confidence $\text{conf}(B_b)$ in bin $b$ are:
+$$\text{acc}(B_b) = \frac{1}{M_b} \sum_{k \in B_b} y_k, \quad \text{conf}(B_b) = \frac{1}{M_b} \sum_{k \in B_b} \hat{p}_k$$
+- **Expected Calibration Error (ECE):**
+$$\text{ECE} = \sum_{b=1}^B \frac{M_b}{M} |\text{acc}(B_b) - \text{conf}(B_b)|$$
+- **Maximum Calibration Error (MCE):**
+$$\text{MCE} = \max_{b \in \{1, \dots, B\}} |\text{acc}(B_b) - \text{conf}(B_b)|$$
+
+---
+
+### Question 28 (Written / Calibration Algorithms)
+**Question:** Explain the algorithmic difference between Platt Scaling and Isotonic Regression. Why must calibrators be fitted strictly on the validation set rather than the training set?
+**Ideal Answer:**
+1. **Platt Scaling (Parametric):** Fits a 2-parameter univariate logistic regression on raw logits $s_k = \text{logit}(\hat{p}_k)$:
+$$\hat{p}_{\text{cal}} = \sigma(a \cdot s_k + b) = \frac{1}{1 + e^{-(a \cdot s_k + b)}}$$
+Optimized via binary cross-entropy. It assumes monotonic sigmoidal distortion.
+2. **Isotonic Regression (Non-Parametric):** Fits a free-form piece-wise constant non-decreasing monotonic step function using the Pool Adjacent Violators Algorithm (PAVA):
+$$\min_{g} \sum_{k=1}^M (y_k - g(\hat{p}_k))^2 \quad \text{subject to } g(\hat{p}_i) \le g(\hat{p}_j) \text{ whenever } \hat{p}_i \le \hat{p}_j$$
+- **Validation-Only Rule:** High-capacity models (LightGBM, GNNs) overfit training labels, driving training probabilities toward extreme values ($0.0$ and $1.0$). If calibrated on training data, the calibrator learns to trust these overconfident scores. Fitting on out-of-fold validation data reflects true empirical uncertainty.
+
+---
+
+### Question 29 (Verbal / Reliability Diagrams)
+**Question:** Interpret the Reliability Diagram (Figure 4). What does it mean when the uncalibrated curve lies below the 45-degree diagonal in the high-probability region?
+**Ideal Answer:**
+- **45-Degree Diagonal:** Represents perfect calibration ($P(\text{severe} \mid \hat{p}=p) = p$).
+- **Curve Below Diagonal (High-Probability Region):** When the uncalibrated curve lies *below* the diagonal (e.g., predicted confidence is $0.80$, but empirical event frequency is only $0.45$), the model is **overconfident**. It over-predicts severe outage risk during moderately stormy conditions.
+- **Post-Calibration Impact:** After isotonic calibration, the curve aligns tightly with the 45-degree diagonal, ensuring that when the model reports a $70\%$ outage risk, a severe outage occurs exactly $70\%$ of the time.
+
+---
+
+### Question 30 (Verbal / Conformal Prediction Theory)
+**Question:** What is Split Conformal Prediction, and what exact theoretical finite-sample coverage guarantees does it provide without distributional assumptions?
+**Ideal Answer:**
+Split Conformal Prediction is a distribution-free uncertainty quantification framework that converts any point or quantile regression model into calibrated prediction intervals with finite-sample statistical guarantees.
+- **Theoretical Guarantee:** If the calibration samples $(\mathbf{x}_k, y_k)_{k=1}^M$ and test sample $(\mathbf{x}_{\text{test}}, y_{\text{test}})$ are exchangeable (e.g., i.i.d.), then for any user-selected significance level $\alpha \in (0, 1)$, the constructed prediction interval $\mathcal{C}_{1-\alpha}(\mathbf{x}_{\text{test}})$ satisfies:
+$$\mathbb{P}\left( y_{\text{test}} \in \mathcal{C}_{1-\alpha}(\mathbf{x}_{\text{test}}) \right) \ge 1 - \alpha$$
+This guarantee holds exactly in finite samples for any underlying data distribution and any model architecture without asymptotic approximations.
+
+---
+
+### Question 31 (Written / Conformal Quantile Computation)
+**Question:** Derive the step-by-step mathematical algorithm for Split Conformal Quantile Regression (CQR) given pre-trained pinball quantile regressors $\hat{q}_{\alpha/2}$ and $\hat{q}_{1-\alpha/2}$.
+**Ideal Answer:**
+1. **Validation Nonconformity Scores:** Given validation dataset $\mathcal{D}_{\text{val}} = \{(\mathbf{x}_k, y_k)\}_{k=1}^M$, compute quantile predictions $[\hat{q}_{\alpha/2}(\mathbf{x}_k), \hat{q}_{1-\alpha/2}(\mathbf{x}_k)]$. Compute nonconformity score:
+$$E_k = \max\left( \hat{q}_{\alpha/2}(\mathbf{x}_k) - y_k, \; y_k - \hat{q}_{1-\alpha/2}(\mathbf{x}_k) \right)$$
+$E_k > 0$ if $y_k$ falls outside the initial quantile interval; $E_k \le 0$ if inside.
+2. **Conformal Quantile Adjustment:** Compute the empirical $\gamma$-quantile of $\{E_k\}_{k=1}^M$:
+$$\hat{Q}_{1-\alpha} = \text{Quantile}\left( \{E_k\}_{k=1}^M, \; \frac{\lceil (M+1)(1-\alpha) \rceil}{M} \right)$$
+3. **Form Test Interval:** For new test feature $\mathbf{x}_{\text{test}}$:
+$$\mathcal{C}_{1-\alpha}(\mathbf{x}_{\text{test}}) = \left[ \hat{q}_{\alpha/2}(\mathbf{x}_{\text{test}}) - \hat{Q}_{1-\alpha}, \; \hat{q}_{1-\alpha/2}(\mathbf{x}_{\text{test}}) + \hat{Q}_{1-\alpha} \right]$$
+
+---
+
+### Question 32 (Verbal / Conformal Test Empirical Validation)
+**Question:** On the 2022 test set, your nominal $90\%$ conformal prediction interval achieved an empirical coverage of $90.43\%$. What does this result prove regarding data non-stationarity?
+**Ideal Answer:**
+Achieving $90.43\%$ empirical coverage (within $0.43\%$ of the exact $90.0\%$ target) proves that despite multi-year temporal separation between the 2021 validation calibration set and the 2022 test set, the underlying feature-outage conditional distribution preserved sufficient exchangeability. It validates that the conformal nonconformity distribution calibrated on 2021 generalized robustly to unseen 2022 storms without catastrophic interval under-coverage.
